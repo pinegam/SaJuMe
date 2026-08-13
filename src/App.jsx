@@ -53,6 +53,40 @@ function buildMockSajuText({ name, birthDate, birthTime, gender, calendarType })
 이건 임시 문구다-멍. API 한도가 회복되면 더 정확한 해석으로 바꿔줄게-멍.`
 }
 
+const PENDING_RESULT_KEY = 'saju_pending_result'
+
+function getPreviewResult(text) {
+  const value = String(text || '').trim()
+  if (!value) return ''
+
+  const paragraphs = value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)
+  if (paragraphs.length >= 2) {
+    return paragraphs[0]
+  }
+
+  const limit = Math.min(140, Math.max(80, Math.floor(value.length * 0.32)))
+  if (value.length <= limit) return value
+  return `${value.slice(0, limit).trim()}…`
+}
+
+function readPendingResult() {
+  try {
+    const raw = sessionStorage.getItem(PENDING_RESULT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function writePendingResult(payload) {
+  sessionStorage.setItem(PENDING_RESULT_KEY, JSON.stringify(payload))
+}
+
+function clearPendingResult() {
+  sessionStorage.removeItem(PENDING_RESULT_KEY)
+}
+
 function App() {
   const [session, setSession] = useState(null)
   const [authReady, setAuthReady] = useState(false)
@@ -85,12 +119,15 @@ function App() {
   const [signupGender, setSignupGender] = useState('')
   const [signupCalendarType, setSignupCalendarType] = useState('solar')
   const [signupError, setSignupError] = useState('')
-
+  const [showLoginModal, setShowLoginModal] = useState(false)
   const [shareMessage, setShareMessage] = useState('')
 
   const user = session?.user ?? null
   const selectedReading = readings.find((item) => item.id === selectedId) || null
   const needsSignup = Boolean(user && profileChecked && !profile)
+  const canViewFullResult = Boolean(user && profile)
+  const previewResult = getPreviewResult(result)
+  const isPreviewLocked = Boolean(result && !canViewFullResult && !selectedReading)
 
   const buildShareText = () => {
     const who = name || '사주미'
@@ -112,6 +149,11 @@ function App() {
   const handleShareResult = async () => {
     if (!result.trim()) {
       setShareMessage('공유할 결과가 없다-멍.')
+      return
+    }
+    if (!canViewFullResult) {
+      setShareMessage('전체 결과를 공유하려면 로그인이 필요하다-멍.')
+      setShowLoginModal(true)
       return
     }
 
@@ -141,6 +183,59 @@ function App() {
     }
   }
 
+  const persistCurrentResult = () => {
+    if (!result.trim()) return
+    writePendingResult({
+      name,
+      birthDate,
+      birthTime,
+      gender,
+      calendarType,
+      result,
+      theme,
+    })
+  }
+
+  const applyPendingToForm = (pending) => {
+    if (!pending) return
+    setName(pending.name || '')
+    setBirthDate(pending.birthDate || '')
+    setBirthTime(formatBirthTime(pending.birthTime))
+    setGender(pending.gender || '')
+    setCalendarType(pending.calendarType || 'solar')
+    setResult(pending.result || '')
+    setTheme(pending.theme || 'default')
+    setSelectedId(null)
+  }
+
+  const saveReadingForUser = async (authUser, payload) => {
+    const { data: saved, error: saveError } = await supabase
+      .from('saju_readings')
+      .insert({
+        user_id: authUser.id,
+        name: payload.name,
+        birth_date: payload.birthDate,
+        birth_time: payload.birthTime,
+        gender: payload.gender,
+        calendar_type: payload.calendarType,
+        theme: payload.theme || 'default',
+        result: payload.result,
+      })
+      .select()
+      .single()
+
+    if (saveError) {
+      console.error('Supabase save failed:', saveError)
+      setListError('결과는 보여줬지만 저장에 실패했다-멍. schema.sql 실행 여부를 확인해 달라-멍.')
+      return null
+    }
+
+    setReadings((prev) => [saved, ...prev])
+    setSelectedId(saved.id)
+    setListError('')
+    return saved
+  }
+
   const isProfileComplete = (row) =>
     Boolean(row?.name && row?.birth_date && row?.birth_time && row?.gender)
 
@@ -156,10 +251,10 @@ function App() {
   const openSignupModal = (seed = {}) => {
     const metaName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
     setSignupName(seed.name || metaName || '')
-    setSignupBirthDate(seed.birth_date || '')
-    setSignupBirthTime(formatBirthTime(seed.birth_time) || '')
+    setSignupBirthDate(seed.birth_date || seed.birthDate || '')
+    setSignupBirthTime(formatBirthTime(seed.birth_time || seed.birthTime) || '')
     setSignupGender(seed.gender || '')
-    setSignupCalendarType(seed.calendar_type || 'solar')
+    setSignupCalendarType(seed.calendar_type || seed.calendarType || 'solar')
     setSignupError('')
     setShowSignupModal(true)
   }
@@ -201,12 +296,17 @@ function App() {
         setListError('')
         setProfile(null)
         setProfileMessage('')
-        setProfileChecked(false)
+        setProfileChecked(true)
         setShowSignupModal(false)
         return
       }
 
       setProfileChecked(false)
+
+      const pending = readPendingResult()
+      if (pending?.result) {
+        applyPendingToForm(pending)
+      }
 
       const [{ data: profileData, error: profileError }, { data: readingsData, error: readingsError }] =
         await Promise.all([
@@ -225,17 +325,40 @@ function App() {
         setProfile(null)
         setProfileChecked(true)
         setProfileMessage('내 정보를 불러오지 못했다-멍. users 테이블/RLS를 확인해 달라-멍.')
-        openSignupModal()
+        openSignupModal(pending || {
+          name,
+          birth_date: birthDate,
+          birth_time: birthTime,
+          gender,
+          calendar_type: calendarType,
+        })
       } else if (profileData && isProfileComplete(profileData)) {
         setProfile(profileData)
-        applyProfileToForm(profileData)
+        if (!pending?.result) {
+          applyProfileToForm(profileData)
+        }
         setProfileMessage('')
         setShowSignupModal(false)
+        setShowLoginModal(false)
         setProfileChecked(true)
+
+        if (pending?.result) {
+          await saveReadingForUser(user, pending)
+          clearPendingResult()
+        }
       } else {
         setProfile(null)
         setProfileChecked(true)
-        openSignupModal(profileData || {})
+        openSignupModal(
+          profileData ||
+            pending || {
+              name,
+              birth_date: birthDate,
+              birth_time: birthTime,
+              gender,
+              calendar_type: calendarType,
+            },
+        )
       }
 
       if (readingsError) {
@@ -256,6 +379,7 @@ function App() {
   const handleGoogleLogin = async () => {
     setIsAuthLoading(true)
     setAuthError('')
+    persistCurrentResult()
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -358,7 +482,15 @@ function App() {
     setProfile(data)
     applyProfileToForm(data)
     setShowSignupModal(false)
+    setShowLoginModal(false)
     setProfileMessage('')
+
+    const pending = readPendingResult()
+    if (pending?.result) {
+      applyPendingToForm(pending)
+      await saveReadingForUser(user, pending)
+      clearPendingResult()
+    }
   }
 
   const handleSelectReading = (reading) => {
@@ -449,12 +581,6 @@ function App() {
   }
 
   const handleResultClick = async () => {
-    if (!user) {
-      setTheme('default')
-      setResult('Google 로그인 후 결과를 저장할 수 있다-멍.')
-      return
-    }
-
     if (!name || !birthDate || !birthTime || !gender) {
       setTheme('default')
       setSelectedId(null)
@@ -484,6 +610,7 @@ function App() {
     setTheme('default')
     setResult('')
     setSelectedId(null)
+    setShareMessage('')
 
     try {
       let rawText = ''
@@ -526,28 +653,26 @@ function App() {
       setTheme(parsed.theme)
       setResult(resultBody)
 
-      const { data: saved, error: saveError } = await supabase
-        .from('saju_readings')
-        .insert({
-          user_id: user.id,
+      if (user && profile) {
+        await saveReadingForUser(user, {
           name,
-          birth_date: birthDate,
-          birth_time: birthTime,
+          birthDate,
+          birthTime,
           gender,
-          calendar_type: calendarType,
+          calendarType,
           theme: parsed.theme,
           result: resultBody,
         })
-        .select()
-        .single()
-
-      if (saveError) {
-        console.error('Supabase save failed:', saveError)
-        setListError('결과는 보여줬지만 저장에 실패했다-멍. schema.sql 실행 여부를 확인해 달라-멍.')
-      } else if (saved) {
-        setReadings((prev) => [saved, ...prev])
-        setSelectedId(saved.id)
-        setListError('')
+      } else {
+        writePendingResult({
+          name,
+          birthDate,
+          birthTime,
+          gender,
+          calendarType,
+          theme: parsed.theme,
+          result: resultBody,
+        })
       }
     } catch (error) {
       console.error(error)
@@ -575,28 +700,7 @@ function App() {
       <div className="page theme-default">
         <div className="auth-shell">
           <Mascot size="lg" className="mascot-bob" />
-          <p className="auth-status">로그인 상태 확인 중이다-멍...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="page theme-default">
-        <div className="auth-shell">
-          <Mascot size="hero" className="mascot-bob" />
-          <p className="brand">사주미</p>
-          <p className="auth-lead">안녕하다-멍. Google로 로그인하면 사주를 같이 볼 수 있다-멍.</p>
-          {authError && <p className="auth-error">{authError}</p>}
-          <button
-            type="button"
-            className="google-button"
-            onClick={handleGoogleLogin}
-            disabled={isAuthLoading}
-          >
-            {isAuthLoading ? '이동 중이다-멍...' : 'Google로 계속하기'}
-          </button>
+          <p className="auth-status">준비 중이다-멍...</p>
         </div>
       </div>
     )
@@ -604,6 +708,42 @@ function App() {
 
   return (
     <div className={`page theme-${theme}`}>
+      {showLoginModal && !user && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+            <div className="modal-mascot-row">
+              <Mascot size="md" className="mascot-bob" />
+              <div>
+                <p className="modal-brand">사주미</p>
+                <h2 id="login-title" className="modal-title">
+                  전체 결과 잠금 해제
+                </h2>
+              </div>
+            </div>
+            <p className="modal-lead">
+              미리보기만 보여줬다-멍. Google로 로그인하면 전체 해석과 저장이 열린다-멍.
+            </p>
+            {authError && <p className="auth-error">{authError}</p>}
+            <button
+              type="button"
+              className="google-button"
+              onClick={handleGoogleLogin}
+              disabled={isAuthLoading}
+            >
+              {isAuthLoading ? '이동 중이다-멍...' : 'Google로 계속하기'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button modal-logout"
+              onClick={() => setShowLoginModal(false)}
+              disabled={isAuthLoading}
+            >
+              나중에 하기
+            </button>
+          </div>
+        </div>
+      )}
+
       {showSignupModal && (
         <div className="modal-backdrop" role="presentation">
           <div
@@ -763,33 +903,45 @@ function App() {
       )}
 
       {!needsSignup && (
-      <div className="layout">
+      <div className={`layout${user ? '' : ' layout-guest'}`}>
         <aside className="sidebar" aria-label="저장된 사주 목록">
           <div className="sidebar-header">
-            <h2 className="sidebar-title">저장된 사주</h2>
-            <button type="button" className="ghost-button" onClick={() => resetForm()}>
-              내 정보로
-            </button>
+            <h2 className="sidebar-title">{user ? '저장된 사주' : '무료 테스트'}</h2>
+            {user ? (
+              <button type="button" className="ghost-button" onClick={() => resetForm()}>
+                내 정보로
+              </button>
+            ) : null}
           </div>
           {listError && <p className="sidebar-error">{listError}</p>}
-          {readings.length === 0 && !listError && (
+          {!user && (
+            <div className="sidebar-empty-block">
+              <Mascot size="sm" />
+              <p className="sidebar-empty">
+                먼저 사주를 테스트해 보라-멍. 전체 결과와 저장은 로그인 후 열린다-멍.
+              </p>
+            </div>
+          )}
+          {user && readings.length === 0 && !listError && (
             <div className="sidebar-empty-block">
               <Mascot size="sm" />
               <p className="sidebar-empty">아직 없다-멍. 결과 보기를 누르면 여기에 생긴다-멍.</p>
             </div>
           )}
-          <div className="name-list">
-            {readings.map((reading) => (
-              <button
-                key={reading.id}
-                type="button"
-                className={`name-button${selectedId === reading.id ? ' is-active' : ''}`}
-                onClick={() => handleSelectReading(reading)}
-              >
-                {reading.name}
-              </button>
-            ))}
-          </div>
+          {user && (
+            <div className="name-list">
+              {readings.map((reading) => (
+                <button
+                  key={reading.id}
+                  type="button"
+                  className={`name-button${selectedId === reading.id ? ' is-active' : ''}`}
+                  onClick={() => handleSelectReading(reading)}
+                >
+                  {reading.name}
+                </button>
+              ))}
+            </div>
+          )}
         </aside>
 
         <div className="app">
@@ -798,26 +950,42 @@ function App() {
               <Mascot size="sm" className="mascot-bob" />
               <div>
                 <h1>사주미</h1>
-                <p className="lead">정보를 알려주면 사주를 봐줄게-멍.</p>
+                <p className="lead">
+                  {user
+                    ? '정보를 알려주면 사주를 봐줄게-멍.'
+                    : '로그인 없이 먼저 테스트해 보라-멍.'}
+                </p>
               </div>
             </div>
             <div className="user-chip">
-              <span className="user-email">{user.email}</span>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => openSignupModal(profile || {})}
-              >
-                내 정보 수정
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={handleLogout}
-                disabled={isAuthLoading}
-              >
-                로그아웃
-              </button>
+              {user ? (
+                <>
+                  <span className="user-email">{user.email}</span>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => openSignupModal(profile || {})}
+                  >
+                    내 정보 수정
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={handleLogout}
+                    disabled={isAuthLoading}
+                  >
+                    로그아웃
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setShowLoginModal(true)}
+                >
+                  로그인
+                </button>
+              )}
             </div>
           </div>
 
@@ -926,7 +1094,7 @@ function App() {
             >
               {isLoading ? '해석 중이다-멍...' : selectedId ? '새로 해석·저장' : '결과 보기'}
             </button>
-            {selectedId && (
+            {selectedId && user && (
               <>
                 <button
                   type="button"
@@ -1022,19 +1190,53 @@ function App() {
             <div className="result">
               <div className="result-heading">
                 <Mascot size="xs" />
-                <h2>사주 결과</h2>
+                <h2>{isPreviewLocked ? '미리보기 결과' : '사주 결과'}</h2>
               </div>
-              <p className="result-text">{result}</p>
-              <div className="result-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={handleShareResult}
-                >
-                  공유하기
-                </button>
-              </div>
-              {shareMessage && <p className="result-hint">{shareMessage}</p>}
+
+              {isPreviewLocked ? (
+                <>
+                  <p className="result-text">{previewResult}</p>
+                  <div className="locked-result">
+                    <div className="locked-result-blur" aria-hidden="true">
+                      <p>
+                        나머지 해석은 아직 잠겨 있다-멍. 재능의 흐름, 조심할 점, 특이 기운까지
+                        이어서 풀어줄 준비가 돼 있다-멍. 로그인하면 전체 결과가 열린다-멍.
+                      </p>
+                      <p>
+                        숨겨진 파트에는 약점 보완법과 기운의 리듬, 하루를 설계하는 팁이 들어 있다-멍.
+                      </p>
+                    </div>
+                    <div className="locked-result-cta">
+                      <Mascot size="sm" className="mascot-bob" />
+                      <p>전체 결과를 보려면 로그인해 달라-멍.</p>
+                      <button
+                        type="button"
+                        className="result-button"
+                        onClick={() => {
+                          persistCurrentResult()
+                          setShowLoginModal(true)
+                        }}
+                      >
+                        Google로 전체 결과 보기
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="result-text">{result}</p>
+                  <div className="result-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleShareResult}
+                    >
+                      공유하기
+                    </button>
+                  </div>
+                  {shareMessage && <p className="result-hint">{shareMessage}</p>}
+                </>
+              )}
             </div>
           )}
         </div>
