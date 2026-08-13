@@ -86,9 +86,60 @@ function App() {
   const [signupCalendarType, setSignupCalendarType] = useState('solar')
   const [signupError, setSignupError] = useState('')
 
+  const [shareMessage, setShareMessage] = useState('')
+
   const user = session?.user ?? null
   const selectedReading = readings.find((item) => item.id === selectedId) || null
   const needsSignup = Boolean(user && profileChecked && !profile)
+
+  const buildShareText = () => {
+    const who = name || '사주미'
+    const body = String(result || '').trim()
+    return [
+      `[사주미] ${who}님의 사주 결과다-멍`,
+      birthDate || birthTime || gender
+        ? `생년월일 ${birthDate || '-'} / ${formatBirthTime(birthTime) || '-'} / ${genderLabel(gender)} / ${calendarLabel(calendarType)}`
+        : null,
+      '',
+      body,
+      '',
+      window.location.origin,
+    ]
+      .filter((line) => line !== null)
+      .join('\n')
+  }
+
+  const handleShareResult = async () => {
+    if (!result.trim()) {
+      setShareMessage('공유할 결과가 없다-멍.')
+      return
+    }
+
+    const shareText = buildShareText()
+    const shareData = {
+      title: '사주미',
+      text: shareText,
+      url: window.location.origin,
+    }
+
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share(shareData)
+        setShareMessage('공유했다-멍!')
+        return
+      }
+
+      await navigator.clipboard.writeText(shareText)
+      setShareMessage('결과를 복사했다-멍. 원하는 곳에 붙여넣으면 된다-멍.')
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        setShareMessage('')
+        return
+      }
+      console.error(error)
+      setShareMessage('공유에 실패했다-멍. 잠시 후 다시 시도해 달라-멍.')
+    }
+  }
 
   const isProfileComplete = (row) =>
     Boolean(row?.name && row?.birth_date && row?.birth_time && row?.gender)
@@ -953,6 +1004,16 @@ function App() {
                 rows={12}
                 aria-label="사주 결과 수정"
               />
+              <div className="result-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleShareResult}
+                >
+                  공유하기
+                </button>
+              </div>
+              {shareMessage && <p className="result-hint">{shareMessage}</p>}
               <p className="result-hint">내용을 고친 뒤 「수정 저장」을 누르면 반영된다-멍.</p>
             </div>
           )}
@@ -964,6 +1025,16 @@ function App() {
                 <h2>사주 결과</h2>
               </div>
               <p className="result-text">{result}</p>
+              <div className="result-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleShareResult}
+                >
+                  공유하기
+                </button>
+              </div>
+              {shareMessage && <p className="result-hint">{shareMessage}</p>}
             </div>
           )}
         </div>
