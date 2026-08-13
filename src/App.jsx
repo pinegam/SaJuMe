@@ -2,10 +2,22 @@ import { useEffect, useState } from 'react'
 import { GoogleGenAI } from '@google/genai/web'
 import { SAJU_BASIC_CHART_PROMPT, parseSajuResponse } from './prompts/sajuBasicChart'
 import { supabase } from './lib/supabase'
+import mascotImg from './assets/mascot.png'
 import './App.css'
 
 // 임시: Gemini 할당량 초과 시 true. 다시 API 쓰려면 false로 바꾸세요.
 const USE_MOCK_SAJU = true
+
+function Mascot({ className = '', size = 'md', alt = '사주미 마스코트' }) {
+  return (
+    <img
+      src={mascotImg}
+      alt={alt}
+      className={`mascot mascot-${size}${className ? ` ${className}` : ''}`}
+      draggable={false}
+    />
+  )
+}
 
 function genderLabel(gender) {
   if (gender === 'male') return '남자'
@@ -28,17 +40,17 @@ function buildMockSajuText({ name, birthDate, birthTime, gender, calendarType })
   const theme = themes[name.length % themes.length]
 
   return `THEME:${theme}
-[임시 결과] ${name}님의 사주 해석입니다. 현재 Gemini API 이용량 한도로 인해 임시 문장으로 대체되었습니다.
+[임시 결과] ${name}님의 사주를 살짝 들여다봤다-멍.
 
-생년월일 ${birthDate}, 태어난 시간 ${birthTime}, 성별 ${genderLabel(gender)}, ${calendarLabel(calendarType)} 기준으로 보면 전반적으로 균형 잡힌 기운이 느껴집니다. 겉으로는 차분하지만 속으로는 추진력이 강한 편이며, 한 번 마음먹은 일은 끝까지 밀어붙이는 기질이 돋보입니다.
+생년월일 ${birthDate}, 태어난 시간 ${birthTime}, 성별 ${genderLabel(gender)}, ${calendarLabel(calendarType)} 기준으로 보면 전반적으로 균형 잡힌 기운이 느껴진다-멍. 겉으로는 차분하지만 속으로는 추진력이 강한 편이고, 한 번 마음먹은 일은 끝까지 밀어붙이는 기질이 돋보인다-멍.
 
-재능 면에서는 사람과 상황을 빠르게 읽고 말로 풀어내는 능력이 눈에 띕니다. 다만 생각이 많아지면 결정을 미루는 경향이 있어, 중요한 순간에는 기준을 하나 정해 두는 편이 좋습니다.
+재능 면에서는 사람과 상황을 빠르게 읽고 말로 풀어내는 능력이 눈에 띈다-멍. 다만 생각이 많아지면 결정을 미루는 경향이 있어, 중요한 순간에는 기준을 하나 정해 두면 좋다-멍.
 
-약점은 완벽을 추구하기보다 속도에 치우칠 때 디테일을 놓치기 쉽다는 점입니다. 반대로 장점은 위기 상황에서도 분위기나 흐름을 바꾸는 힘이 있다는 점입니다.
+약점은 속도에 치우칠 때 디테일을 놓치기 쉽다는 점이다-멍. 반대로 장점은 위기 상황에서도 분위기나 흐름을 바꾸는 힘이 있다는 거다-멍.
 
-특이하게도 ${birthTime} 시간대 기운이 성격의 리듬을 크게 좌우하는 편이라, 하루의 시작과 마무리를 스스로 설계할 때 컨디션이 안정됩니다.
+특이하게도 ${birthTime} 시간대 기운이 성격의 리듬을 크게 좌우하는 편이라, 하루의 시작과 마무리를 스스로 설계할 때 컨디션이 안정된다-멍.
 
-이 결과는 임시 문구이며, API 한도가 회복되면 실제 Gemini 해석으로 교체할 수 있습니다.`
+이건 임시 문구다-멍. API 한도가 회복되면 더 정확한 해석으로 바꿔줄게-멍.`
 }
 
 function App() {
@@ -108,7 +120,7 @@ function App() {
       if (cancelled) return
       if (error) {
         console.error(error)
-        setAuthError('로그인 상태를 확인하지 못했습니다.')
+        setAuthError('로그인 상태를 확인하지 못했다-멍.')
       }
       setSession(data.session ?? null)
       setAuthReady(true)
@@ -161,7 +173,7 @@ function App() {
         console.error(profileError)
         setProfile(null)
         setProfileChecked(true)
-        setProfileMessage('내 정보를 불러오지 못했습니다. users 테이블/RLS를 확인해 주세요.')
+        setProfileMessage('내 정보를 불러오지 못했다-멍. users 테이블/RLS를 확인해 달라-멍.')
         openSignupModal()
       } else if (profileData && isProfileComplete(profileData)) {
         setProfile(profileData)
@@ -177,7 +189,7 @@ function App() {
 
       if (readingsError) {
         console.error(readingsError)
-        setListError('저장된 사주 목록을 불러오지 못했습니다. schema.sql 실행 여부를 확인해 주세요.')
+        setListError('저장된 사주 목록을 불러오지 못했다-멍. schema.sql 실행 여부를 확인해 달라-멍.')
       } else {
         setReadings(readingsData || [])
         setListError('')
@@ -203,7 +215,7 @@ function App() {
 
     if (error) {
       console.error(error)
-      setAuthError(error.message || 'Google 로그인에 실패했습니다.')
+      setAuthError(error.message || 'Google 로그인에 실패했다-멍.')
       setIsAuthLoading(false)
     }
   }
@@ -216,7 +228,7 @@ function App() {
 
     if (error) {
       console.error(error)
-      setAuthError(error.message || '로그아웃에 실패했습니다.')
+      setAuthError(error.message || '로그아웃에 실패했다-멍.')
       return
     }
 
@@ -256,11 +268,11 @@ function App() {
   const handleSignupSubmit = async (event) => {
     event.preventDefault()
     if (!user) {
-      setSignupError('로그인이 필요합니다.')
+      setSignupError('로그인이 필요하다-멍.')
       return
     }
     if (!signupName || !signupBirthDate || !signupBirthTime || !signupGender) {
-      setSignupError('이름, 생년월일, 시간, 성별을 모두 입력해 주세요.')
+      setSignupError('이름, 생년월일, 시간, 성별을 모두 입력해 달라-멍.')
       return
     }
 
@@ -288,7 +300,7 @@ function App() {
 
     if (error) {
       console.error(error)
-      setSignupError('회원가입 정보 저장에 실패했습니다. users 테이블/RLS를 확인해 주세요.')
+      setSignupError('회원가입 정보 저장에 실패했다-멍. users 테이블/RLS를 확인해 달라-멍.')
       return
     }
 
@@ -311,15 +323,15 @@ function App() {
 
   const handleUpdateReading = async () => {
     if (!user) {
-      setListError('로그인이 필요합니다.')
+      setListError('로그인이 필요하다-멍.')
       return
     }
     if (!selectedId) {
-      setListError('수정할 사주를 왼쪽 목록에서 선택해 주세요.')
+      setListError('수정할 사주를 왼쪽 목록에서 선택해 달라-멍.')
       return
     }
     if (!name || !birthDate || !birthTime || !gender || !result) {
-      setListError('이름, 생년월일, 시간, 성별, 결과 내용을 모두 입력해 주세요.')
+      setListError('이름, 생년월일, 시간, 성별, 결과 내용을 모두 입력해 달라-멍.')
       return
     }
 
@@ -346,7 +358,7 @@ function App() {
 
     if (error) {
       console.error(error)
-      setListError('수정에 실패했습니다. schema.sql의 update 정책을 확인해 주세요.')
+      setListError('수정에 실패했다-멍. schema.sql의 update 정책을 확인해 달라-멍.')
       return
     }
 
@@ -355,14 +367,14 @@ function App() {
 
   const handleDeleteReading = async () => {
     if (!user) {
-      setListError('로그인이 필요합니다.')
+      setListError('로그인이 필요하다-멍.')
       return
     }
     if (!selectedId) {
-      setListError('삭제할 사주를 왼쪽 목록에서 선택해 주세요.')
+      setListError('삭제할 사주를 왼쪽 목록에서 선택해 달라-멍.')
       return
     }
-    if (!window.confirm(`"${name || '선택한 사주'}" 기록을 삭제할까요?`)) return
+    if (!window.confirm(`"${name || '선택한 사주'}" 기록을 삭제할까-멍?`)) return
 
     setIsDeleting(true)
     setListError('')
@@ -377,7 +389,7 @@ function App() {
 
     if (error) {
       console.error(error)
-      setListError('삭제에 실패했습니다. schema.sql의 delete 정책을 확인해 주세요.')
+      setListError('삭제에 실패했다-멍. schema.sql의 delete 정책을 확인해 달라-멍.')
       return
     }
 
@@ -388,14 +400,14 @@ function App() {
   const handleResultClick = async () => {
     if (!user) {
       setTheme('default')
-      setResult('Google 로그인 후 결과를 저장할 수 있습니다.')
+      setResult('Google 로그인 후 결과를 저장할 수 있다-멍.')
       return
     }
 
     if (!name || !birthDate || !birthTime || !gender) {
       setTheme('default')
       setSelectedId(null)
-      setResult('이름, 생년월일, 태어난 시간, 성별을 모두 입력해 주세요.')
+      setResult('이름, 생년월일, 태어난 시간, 성별을 모두 입력해 달라-멍.')
       return
     }
 
@@ -404,14 +416,14 @@ function App() {
       if (!apiKey) {
         setTheme('default')
         setSelectedId(null)
-        setResult('API 키가 없습니다. .env 파일에 VITE_GEMINI_API_KEY를 확인해 주세요.')
+        setResult('API 키가 없다-멍. .env 파일에 VITE_GEMINI_API_KEY를 확인해 달라-멍.')
         return
       }
       if (/[^\x00-\x7F]/.test(apiKey)) {
         setTheme('default')
         setSelectedId(null)
         setResult(
-          'API 키에 영어/숫자 외 문자가 섞여 있습니다. AI Studio에서 키를 다시 복사해 .env에 붙여넣고 Vite를 재시작해 주세요.',
+          'API 키에 영어/숫자 외 문자가 섞여 있다-멍. AI Studio에서 키를 다시 복사해 .env에 붙여넣고 Vite를 재시작해 달라-멍.',
         )
         return
       }
@@ -459,7 +471,7 @@ function App() {
       }
 
       const parsed = parseSajuResponse(rawText)
-      const resultBody = parsed.body || '결과를 가져오지 못했습니다.'
+      const resultBody = parsed.body || '결과를 가져오지 못했다-멍.'
       setTheme(parsed.theme)
       setResult(resultBody)
 
@@ -480,7 +492,7 @@ function App() {
 
       if (saveError) {
         console.error('Supabase save failed:', saveError)
-        setListError('결과는 표시되지만 저장에 실패했습니다. schema.sql 실행 여부를 확인해 주세요.')
+        setListError('결과는 보여줬지만 저장에 실패했다-멍. schema.sql 실행 여부를 확인해 달라-멍.')
       } else if (saved) {
         setReadings((prev) => [saved, ...prev])
         setSelectedId(saved.id)
@@ -493,14 +505,14 @@ function App() {
       const message = error.message || String(error)
       if (message.includes('429') || message.includes('RESOURCE_EXHAUSTED') || message.includes('quota')) {
         setResult(
-          'Gemini API 사용량 한도를 초과했습니다. 약 1분 뒤 다시 시도하거나, 내일(태평양 시간 기준) 한도가 초기화된 뒤 사용해 주세요. 사용량: https://ai.dev/rate-limit',
+          'Gemini API 사용량 한도를 초과했다-멍. 약 1분 뒤 다시 시도하거나, 내일(태평양 시간 기준) 한도가 초기화된 뒤 사용해 달라-멍. 사용량: https://ai.dev/rate-limit',
         )
       } else if (message.includes('403') || message.includes('Permission') || message.includes('denied')) {
         setResult(
-          'API 접근이 거부되었습니다(403). Google AI Studio에서 Gemini API 키를 새로 발급해 .env의 VITE_GEMINI_API_KEY를 교체한 뒤, Vite를 재시작해 주세요. https://aistudio.google.com/apikey',
+          'API 접근이 거부됐다-멍(403). Google AI Studio에서 Gemini API 키를 새로 발급해 .env의 VITE_GEMINI_API_KEY를 교체한 뒤, Vite를 재시작해 달라-멍. https://aistudio.google.com/apikey',
         )
       } else {
-        setResult(`오류가 발생했습니다: ${message}`)
+        setResult(`오류가 발생했다-멍: ${message}`)
       }
     } finally {
       setIsLoading(false)
@@ -511,7 +523,8 @@ function App() {
     return (
       <div className="page theme-default">
         <div className="auth-shell">
-          <p className="auth-status">로그인 상태 확인 중...</p>
+          <Mascot size="lg" className="mascot-bob" />
+          <p className="auth-status">로그인 상태 확인 중이다-멍...</p>
         </div>
       </div>
     )
@@ -521,8 +534,9 @@ function App() {
     return (
       <div className="page theme-default">
         <div className="auth-shell">
+          <Mascot size="hero" className="mascot-bob" />
           <p className="brand">사주미</p>
-          <p className="auth-lead">Google 계정으로 로그인하고 사주를 저장하세요.</p>
+          <p className="auth-lead">안녕하다-멍. Google로 로그인하면 사주를 같이 볼 수 있다-멍.</p>
           {authError && <p className="auth-error">{authError}</p>}
           <button
             type="button"
@@ -530,7 +544,7 @@ function App() {
             onClick={handleGoogleLogin}
             disabled={isAuthLoading}
           >
-            {isAuthLoading ? '이동 중...' : 'Google로 계속하기'}
+            {isAuthLoading ? '이동 중이다-멍...' : 'Google로 계속하기'}
           </button>
         </div>
       </div>
@@ -547,14 +561,19 @@ function App() {
             aria-modal="true"
             aria-labelledby="signup-title"
           >
-            <p className="modal-brand">사주미</p>
-            <h2 id="signup-title" className="modal-title">
-              {needsSignup ? '회원가입' : '내 정보 수정'}
-            </h2>
+            <div className="modal-mascot-row">
+              <Mascot size="md" className="mascot-bob" />
+              <div>
+                <p className="modal-brand">사주미</p>
+                <h2 id="signup-title" className="modal-title">
+                  {needsSignup ? '회원가입' : '내 정보 수정'}
+                </h2>
+              </div>
+            </div>
             <p className="modal-lead">
               {needsSignup
-                ? '처음 로그인이시네요. 사주 해석에 필요한 기본 정보를 입력해 주세요.'
-                : '저장된 기본 정보를 수정할 수 있습니다.'}
+                ? '처음 만났다-멍. 사주 해석에 필요한 기본 정보를 알려달라-멍.'
+                : '저장된 기본 정보를 고칠 수 있다-멍.'}
             </p>
             <form className="modal-form" onSubmit={handleSignupSubmit}>
               <div className="field">
@@ -663,7 +682,7 @@ function App() {
                 disabled={isSavingProfile}
               >
                 {isSavingProfile
-                  ? '저장 중...'
+                  ? '저장 중이다-멍...'
                   : needsSignup
                     ? '가입 완료'
                     : '저장'}
@@ -703,7 +722,10 @@ function App() {
           </div>
           {listError && <p className="sidebar-error">{listError}</p>}
           {readings.length === 0 && !listError && (
-            <p className="sidebar-empty">결과 보기를 누르면 이름 버튼이 여기에 생깁니다.</p>
+            <div className="sidebar-empty-block">
+              <Mascot size="sm" />
+              <p className="sidebar-empty">아직 없다-멍. 결과 보기를 누르면 여기에 생긴다-멍.</p>
+            </div>
           )}
           <div className="name-list">
             {readings.map((reading) => (
@@ -721,9 +743,12 @@ function App() {
 
         <div className="app">
           <div className="app-header">
-            <div>
-              <h1>사주미</h1>
-              <p className="lead">사주 정보를 입력해 주세요.</p>
+            <div className="app-title-row">
+              <Mascot size="sm" className="mascot-bob" />
+              <div>
+                <h1>사주미</h1>
+                <p className="lead">정보를 알려주면 사주를 봐줄게-멍.</p>
+              </div>
             </div>
             <div className="user-chip">
               <span className="user-email">{user.email}</span>
@@ -848,7 +873,7 @@ function App() {
               onClick={handleResultClick}
               disabled={isLoading || isSaving || isDeleting || isSavingProfile}
             >
-              {isLoading ? '해석 중...' : selectedId ? '새로 해석·저장' : '결과 보기'}
+              {isLoading ? '해석 중이다-멍...' : selectedId ? '새로 해석·저장' : '결과 보기'}
             </button>
             {selectedId && (
               <>
@@ -858,7 +883,7 @@ function App() {
                   onClick={handleUpdateReading}
                   disabled={isLoading || isSaving || isDeleting || isSavingProfile}
                 >
-                  {isSaving ? '저장 중...' : '수정 저장'}
+                  {isSaving ? '저장 중이다-멍...' : '수정 저장'}
                 </button>
                 <button
                   type="button"
@@ -866,7 +891,7 @@ function App() {
                   onClick={handleDeleteReading}
                   disabled={isLoading || isSaving || isDeleting || isSavingProfile}
                 >
-                  {isDeleting ? '삭제 중...' : '삭제'}
+                  {isDeleting ? '삭제 중이다-멍...' : '삭제'}
                 </button>
               </>
             )}
@@ -874,6 +899,10 @@ function App() {
 
           {isLoading && (
             <div className="result" aria-busy="true" aria-label="사주 해석 로딩 중">
+              <div className="loading-mascot">
+                <Mascot size="md" className="mascot-bob" />
+                <p className="result-hint">사주를 살피는 중이다-멍...</p>
+              </div>
               <div className="skeleton skeleton-title" />
               <div className="skeleton-lines">
                 <div className="skeleton skeleton-line" />
@@ -890,7 +919,10 @@ function App() {
 
           {!isLoading && selectedReading && (
             <div className="result">
-              <h2>저장된 사주</h2>
+              <div className="result-heading">
+                <Mascot size="xs" />
+                <h2>저장된 사주</h2>
+              </div>
               <dl className="reading-meta">
                 <div>
                   <dt>이름</dt>
@@ -921,13 +953,16 @@ function App() {
                 rows={12}
                 aria-label="사주 결과 수정"
               />
-              <p className="result-hint">내용을 고친 뒤 「수정 저장」을 누르면 반영됩니다.</p>
+              <p className="result-hint">내용을 고친 뒤 「수정 저장」을 누르면 반영된다-멍.</p>
             </div>
           )}
 
           {!isLoading && !selectedReading && result && (
             <div className="result">
-              <h2>사주 결과</h2>
+              <div className="result-heading">
+                <Mascot size="xs" />
+                <h2>사주 결과</h2>
+              </div>
               <p className="result-text">{result}</p>
             </div>
           )}
