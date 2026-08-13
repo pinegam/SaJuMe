@@ -384,6 +384,70 @@ body {
   margin-top: 0.5rem;
 }
 
+.profile-actions {
+  margin-top: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.profile-message {
+  margin: 0 0 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(180, 140, 90, 0.22), transparent 55%),
+    rgba(20, 14, 10, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  width: min(100%, 460px);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.6rem 1.4rem 1.35rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--page-fg);
+}
+
+.modal-brand {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+.modal-title {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 1.25rem;
+}
+
+.modal-lead {
+  margin: 0 0 1.15rem;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.95rem;
+}
+
+.modal-form .result-button {
+  margin-top: 0.35rem;
+}
+
+.modal-logout {
+  width: 100%;
+  margin-top: 0.65rem;
+  text-align: center;
+}
+
 @media (min-width: 520px) {
   .action-row:has(.secondary-button) {
     grid-template-columns: 1.4fr 1fr 0.85fr;

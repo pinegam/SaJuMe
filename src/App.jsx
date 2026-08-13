@@ -62,9 +62,44 @@ function App() {
   const [listError, setListError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileMessage, setProfileMessage] = useState('')
+  const [profile, setProfile] = useState(null)
+  const [profileChecked, setProfileChecked] = useState(false)
+  const [showSignupModal, setShowSignupModal] = useState(false)
+  const [signupName, setSignupName] = useState('')
+  const [signupBirthDate, setSignupBirthDate] = useState('')
+  const [signupBirthTime, setSignupBirthTime] = useState('')
+  const [signupGender, setSignupGender] = useState('')
+  const [signupCalendarType, setSignupCalendarType] = useState('solar')
+  const [signupError, setSignupError] = useState('')
 
   const user = session?.user ?? null
   const selectedReading = readings.find((item) => item.id === selectedId) || null
+  const needsSignup = Boolean(user && profileChecked && !profile)
+
+  const isProfileComplete = (row) =>
+    Boolean(row?.name && row?.birth_date && row?.birth_time && row?.gender)
+
+  const applyProfileToForm = (nextProfile) => {
+    if (!nextProfile) return
+    setName(nextProfile.name || '')
+    setBirthDate(nextProfile.birth_date || '')
+    setBirthTime(formatBirthTime(nextProfile.birth_time))
+    setGender(nextProfile.gender || '')
+    setCalendarType(nextProfile.calendar_type || 'solar')
+  }
+
+  const openSignupModal = (seed = {}) => {
+    const metaName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
+    setSignupName(seed.name || metaName || '')
+    setSignupBirthDate(seed.birth_date || '')
+    setSignupBirthTime(formatBirthTime(seed.birth_time) || '')
+    setSignupGender(seed.gender || '')
+    setSignupCalendarType(seed.calendar_type || 'solar')
+    setSignupError('')
+    setShowSignupModal(true)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -96,33 +131,60 @@ function App() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadReadings() {
+    async function loadUserData() {
       if (!user) {
         setReadings([])
         setSelectedId(null)
         setListError('')
+        setProfile(null)
+        setProfileMessage('')
+        setProfileChecked(false)
+        setShowSignupModal(false)
         return
       }
 
-      const { data, error } = await supabase
-        .from('saju_readings')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+      setProfileChecked(false)
+
+      const [{ data: profileData, error: profileError }, { data: readingsData, error: readingsError }] =
+        await Promise.all([
+          supabase.from('users').select('*').eq('id', user.id).maybeSingle(),
+          supabase
+            .from('saju_readings')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false }),
+        ])
 
       if (cancelled) return
 
-      if (error) {
-        console.error(error)
-        setListError('저장된 사주 목록을 불러오지 못했습니다. schema.sql 실행 여부를 확인해 주세요.')
-        return
+      if (profileError) {
+        console.error(profileError)
+        setProfile(null)
+        setProfileChecked(true)
+        setProfileMessage('내 정보를 불러오지 못했습니다. users 테이블/RLS를 확인해 주세요.')
+        openSignupModal()
+      } else if (profileData && isProfileComplete(profileData)) {
+        setProfile(profileData)
+        applyProfileToForm(profileData)
+        setProfileMessage('')
+        setShowSignupModal(false)
+        setProfileChecked(true)
+      } else {
+        setProfile(null)
+        setProfileChecked(true)
+        openSignupModal(profileData || {})
       }
 
-      setReadings(data || [])
-      setListError('')
+      if (readingsError) {
+        console.error(readingsError)
+        setListError('저장된 사주 목록을 불러오지 못했습니다. schema.sql 실행 여부를 확인해 주세요.')
+      } else {
+        setReadings(readingsData || [])
+        setListError('')
+      }
     }
 
-    loadReadings()
+    loadUserData()
     return () => {
       cancelled = true
     }
@@ -158,19 +220,82 @@ function App() {
       return
     }
 
-    resetForm()
+    resetForm({ clearProfile: true })
     setReadings([])
+    setProfile(null)
+    setShowSignupModal(false)
+    setProfileChecked(false)
   }
 
-  const resetForm = () => {
+  const resetForm = ({ clearProfile = false } = {}) => {
     setSelectedId(null)
+    setTheme('default')
+    setResult('')
+
+    if (clearProfile) {
+      setName('')
+      setBirthDate('')
+      setBirthTime('')
+      setGender('')
+      setCalendarType('solar')
+      return
+    }
+
+    if (profile) {
+      applyProfileToForm(profile)
+      return
+    }
+
     setName('')
     setBirthDate('')
     setBirthTime('')
     setGender('')
     setCalendarType('solar')
-    setTheme('default')
-    setResult('')
+  }
+
+  const handleSignupSubmit = async (event) => {
+    event.preventDefault()
+    if (!user) {
+      setSignupError('로그인이 필요합니다.')
+      return
+    }
+    if (!signupName || !signupBirthDate || !signupBirthTime || !signupGender) {
+      setSignupError('이름, 생년월일, 시간, 성별을 모두 입력해 주세요.')
+      return
+    }
+
+    setIsSavingProfile(true)
+    setSignupError('')
+
+    const payload = {
+      id: user.id,
+      email: user.email ?? null,
+      name: signupName.trim(),
+      birth_date: signupBirthDate,
+      birth_time: signupBirthTime,
+      gender: signupGender,
+      calendar_type: signupCalendarType,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .single()
+
+    setIsSavingProfile(false)
+
+    if (error) {
+      console.error(error)
+      setSignupError('회원가입 정보 저장에 실패했습니다. users 테이블/RLS를 확인해 주세요.')
+      return
+    }
+
+    setProfile(data)
+    applyProfileToForm(data)
+    setShowSignupModal(false)
+    setProfileMessage('')
   }
 
   const handleSelectReading = (reading) => {
@@ -382,7 +507,7 @@ function App() {
     }
   }
 
-  if (!authReady) {
+  if (!authReady || (user && !profileChecked)) {
     return (
       <div className="page theme-default">
         <div className="auth-shell">
@@ -414,12 +539,166 @@ function App() {
 
   return (
     <div className={`page theme-${theme}`}>
+      {showSignupModal && (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="signup-title"
+          >
+            <p className="modal-brand">사주미</p>
+            <h2 id="signup-title" className="modal-title">
+              {needsSignup ? '회원가입' : '내 정보 수정'}
+            </h2>
+            <p className="modal-lead">
+              {needsSignup
+                ? '처음 로그인이시네요. 사주 해석에 필요한 기본 정보를 입력해 주세요.'
+                : '저장된 기본 정보를 수정할 수 있습니다.'}
+            </p>
+            <form className="modal-form" onSubmit={handleSignupSubmit}>
+              <div className="field">
+                <label htmlFor="signup-name">이름</label>
+                <input
+                  id="signup-name"
+                  type="text"
+                  value={signupName}
+                  onChange={(event) => setSignupName(event.target.value)}
+                  placeholder="예: 홍길동"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="signup-birthDate">생년월일</label>
+                <input
+                  id="signup-birthDate"
+                  type="date"
+                  value={signupBirthDate}
+                  onChange={(event) => setSignupBirthDate(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="signup-birthTime">태어난 시간</label>
+                <input
+                  id="signup-birthTime"
+                  type="time"
+                  value={signupBirthTime}
+                  onChange={(event) => setSignupBirthTime(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <span className="label-text">성별</span>
+                <div className="options">
+                  <label>
+                    <input
+                      type="radio"
+                      name="signup-gender"
+                      value="male"
+                      checked={signupGender === 'male'}
+                      onChange={(event) => setSignupGender(event.target.value)}
+                      required
+                    />
+                    남자
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="signup-gender"
+                      value="female"
+                      checked={signupGender === 'female'}
+                      onChange={(event) => setSignupGender(event.target.value)}
+                    />
+                    여자
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="signup-gender"
+                      value="?"
+                      checked={signupGender === '?'}
+                      onChange={(event) => setSignupGender(event.target.value)}
+                    />
+                    ?
+                  </label>
+                </div>
+              </div>
+
+              <div className="field">
+                <span className="label-text">양력 / 음력</span>
+                <div className="options">
+                  <label>
+                    <input
+                      type="radio"
+                      name="signup-calendarType"
+                      value="solar"
+                      checked={signupCalendarType === 'solar'}
+                      onChange={(event) => setSignupCalendarType(event.target.value)}
+                    />
+                    양력
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="signup-calendarType"
+                      value="lunar"
+                      checked={signupCalendarType === 'lunar'}
+                      onChange={(event) => setSignupCalendarType(event.target.value)}
+                    />
+                    음력
+                  </label>
+                </div>
+              </div>
+
+              {signupError && <p className="auth-error">{signupError}</p>}
+
+              <button
+                type="submit"
+                className="result-button"
+                disabled={isSavingProfile}
+              >
+                {isSavingProfile
+                  ? '저장 중...'
+                  : needsSignup
+                    ? '가입 완료'
+                    : '저장'}
+              </button>
+              {needsSignup ? (
+                <button
+                  type="button"
+                  className="ghost-button modal-logout"
+                  onClick={handleLogout}
+                  disabled={isAuthLoading || isSavingProfile}
+                >
+                  다른 계정으로 로그인
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost-button modal-logout"
+                  onClick={() => setShowSignupModal(false)}
+                  disabled={isSavingProfile}
+                >
+                  취소
+                </button>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {!needsSignup && (
       <div className="layout">
         <aside className="sidebar" aria-label="저장된 사주 목록">
           <div className="sidebar-header">
             <h2 className="sidebar-title">저장된 사주</h2>
-            <button type="button" className="ghost-button" onClick={resetForm}>
-              새로 입력
+            <button type="button" className="ghost-button" onClick={() => resetForm()}>
+              내 정보로
             </button>
           </div>
           {listError && <p className="sidebar-error">{listError}</p>}
@@ -451,6 +730,13 @@ function App() {
               <button
                 type="button"
                 className="ghost-button"
+                onClick={() => openSignupModal(profile || {})}
+              >
+                내 정보 수정
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
                 onClick={handleLogout}
                 disabled={isAuthLoading}
               >
@@ -460,6 +746,7 @@ function App() {
           </div>
 
           {authError && <p className="sidebar-error">{authError}</p>}
+          {profileMessage && <p className="profile-message">{profileMessage}</p>}
 
           <div className="field">
             <label htmlFor="name">이름</label>
@@ -559,7 +846,7 @@ function App() {
               type="button"
               className="result-button"
               onClick={handleResultClick}
-              disabled={isLoading || isSaving || isDeleting}
+              disabled={isLoading || isSaving || isDeleting || isSavingProfile}
             >
               {isLoading ? '해석 중...' : selectedId ? '새로 해석·저장' : '결과 보기'}
             </button>
@@ -569,7 +856,7 @@ function App() {
                   type="button"
                   className="secondary-button"
                   onClick={handleUpdateReading}
-                  disabled={isLoading || isSaving || isDeleting}
+                  disabled={isLoading || isSaving || isDeleting || isSavingProfile}
                 >
                   {isSaving ? '저장 중...' : '수정 저장'}
                 </button>
@@ -577,7 +864,7 @@ function App() {
                   type="button"
                   className="danger-button"
                   onClick={handleDeleteReading}
-                  disabled={isLoading || isSaving || isDeleting}
+                  disabled={isLoading || isSaving || isDeleting || isSavingProfile}
                 >
                   {isDeleting ? '삭제 중...' : '삭제'}
                 </button>
@@ -646,6 +933,7 @@ function App() {
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }
