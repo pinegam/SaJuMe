@@ -42,6 +42,11 @@ function buildMockSajuText({ name, birthDate, birthTime, gender, calendarType })
 }
 
 function App() {
+  const [session, setSession] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [isAuthLoading, setIsAuthLoading] = useState(false)
+
   const [name, setName] = useState('')
   const [birthDate, setBirthDate] = useState('')
   const [birthTime, setBirthTime] = useState('')
@@ -55,23 +60,61 @@ function App() {
   const [readings, setReadings] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [listError, setListError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
+  const user = session?.user ?? null
   const selectedReading = readings.find((item) => item.id === selectedId) || null
 
   useEffect(() => {
     let cancelled = false
 
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (cancelled) return
+      if (error) {
+        console.error(error)
+        setAuthError('로그인 상태를 확인하지 못했습니다.')
+      }
+      setSession(data.session ?? null)
+      setAuthReady(true)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setAuthReady(true)
+      setAuthError('')
+    })
+
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
     async function loadReadings() {
+      if (!user) {
+        setReadings([])
+        setSelectedId(null)
+        setListError('')
+        return
+      }
+
       const { data, error } = await supabase
         .from('saju_readings')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
       if (cancelled) return
 
       if (error) {
         console.error(error)
-        setListError('저장된 사주 목록을 불러오지 못했습니다. 테이블/RLS를 확인해 주세요.')
+        setListError('저장된 사주 목록을 불러오지 못했습니다. schema.sql 실행 여부를 확인해 주세요.')
         return
       }
 
@@ -83,7 +126,52 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [user])
+
+  const handleGoogleLogin = async () => {
+    setIsAuthLoading(true)
+    setAuthError('')
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    })
+
+    if (error) {
+      console.error(error)
+      setAuthError(error.message || 'Google 로그인에 실패했습니다.')
+      setIsAuthLoading(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    setIsAuthLoading(true)
+    setAuthError('')
+    const { error } = await supabase.auth.signOut()
+    setIsAuthLoading(false)
+
+    if (error) {
+      console.error(error)
+      setAuthError(error.message || '로그아웃에 실패했습니다.')
+      return
+    }
+
+    resetForm()
+    setReadings([])
+  }
+
+  const resetForm = () => {
+    setSelectedId(null)
+    setName('')
+    setBirthDate('')
+    setBirthTime('')
+    setGender('')
+    setCalendarType('solar')
+    setTheme('default')
+    setResult('')
+  }
 
   const handleSelectReading = (reading) => {
     setSelectedId(reading.id)
@@ -96,7 +184,89 @@ function App() {
     setCalendarType(reading.calendar_type || 'solar')
   }
 
+  const handleUpdateReading = async () => {
+    if (!user) {
+      setListError('로그인이 필요합니다.')
+      return
+    }
+    if (!selectedId) {
+      setListError('수정할 사주를 왼쪽 목록에서 선택해 주세요.')
+      return
+    }
+    if (!name || !birthDate || !birthTime || !gender || !result) {
+      setListError('이름, 생년월일, 시간, 성별, 결과 내용을 모두 입력해 주세요.')
+      return
+    }
+
+    setIsSaving(true)
+    setListError('')
+
+    const { data: updated, error } = await supabase
+      .from('saju_readings')
+      .update({
+        name,
+        birth_date: birthDate,
+        birth_time: birthTime,
+        gender,
+        calendar_type: calendarType,
+        theme,
+        result,
+      })
+      .eq('id', selectedId)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    setIsSaving(false)
+
+    if (error) {
+      console.error(error)
+      setListError('수정에 실패했습니다. schema.sql의 update 정책을 확인해 주세요.')
+      return
+    }
+
+    setReadings((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+  }
+
+  const handleDeleteReading = async () => {
+    if (!user) {
+      setListError('로그인이 필요합니다.')
+      return
+    }
+    if (!selectedId) {
+      setListError('삭제할 사주를 왼쪽 목록에서 선택해 주세요.')
+      return
+    }
+    if (!window.confirm(`"${name || '선택한 사주'}" 기록을 삭제할까요?`)) return
+
+    setIsDeleting(true)
+    setListError('')
+
+    const { error } = await supabase
+      .from('saju_readings')
+      .delete()
+      .eq('id', selectedId)
+      .eq('user_id', user.id)
+
+    setIsDeleting(false)
+
+    if (error) {
+      console.error(error)
+      setListError('삭제에 실패했습니다. schema.sql의 delete 정책을 확인해 주세요.')
+      return
+    }
+
+    setReadings((prev) => prev.filter((item) => item.id !== selectedId))
+    resetForm()
+  }
+
   const handleResultClick = async () => {
+    if (!user) {
+      setTheme('default')
+      setResult('Google 로그인 후 결과를 저장할 수 있습니다.')
+      return
+    }
+
     if (!name || !birthDate || !birthTime || !gender) {
       setTheme('default')
       setSelectedId(null)
@@ -171,6 +341,7 @@ function App() {
       const { data: saved, error: saveError } = await supabase
         .from('saju_readings')
         .insert({
+          user_id: user.id,
           name,
           birth_date: birthDate,
           birth_time: birthTime,
@@ -211,11 +382,46 @@ function App() {
     }
   }
 
+  if (!authReady) {
+    return (
+      <div className="page theme-default">
+        <div className="auth-shell">
+          <p className="auth-status">로그인 상태 확인 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="page theme-default">
+        <div className="auth-shell">
+          <p className="brand">사주미</p>
+          <p className="auth-lead">Google 계정으로 로그인하고 사주를 저장하세요.</p>
+          {authError && <p className="auth-error">{authError}</p>}
+          <button
+            type="button"
+            className="google-button"
+            onClick={handleGoogleLogin}
+            disabled={isAuthLoading}
+          >
+            {isAuthLoading ? '이동 중...' : 'Google로 계속하기'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`page theme-${theme}`}>
       <div className="layout">
         <aside className="sidebar" aria-label="저장된 사주 목록">
-          <h2 className="sidebar-title">저장된 사주</h2>
+          <div className="sidebar-header">
+            <h2 className="sidebar-title">저장된 사주</h2>
+            <button type="button" className="ghost-button" onClick={resetForm}>
+              새로 입력
+            </button>
+          </div>
           {listError && <p className="sidebar-error">{listError}</p>}
           {readings.length === 0 && !listError && (
             <p className="sidebar-empty">결과 보기를 누르면 이름 버튼이 여기에 생깁니다.</p>
@@ -235,8 +441,25 @@ function App() {
         </aside>
 
         <div className="app">
-          <h1>사주미</h1>
-          <p className="lead">사주 정보를 입력해 주세요.</p>
+          <div className="app-header">
+            <div>
+              <h1>사주미</h1>
+              <p className="lead">사주 정보를 입력해 주세요.</p>
+            </div>
+            <div className="user-chip">
+              <span className="user-email">{user.email}</span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleLogout}
+                disabled={isAuthLoading}
+              >
+                로그아웃
+              </button>
+            </div>
+          </div>
+
+          {authError && <p className="sidebar-error">{authError}</p>}
 
           <div className="field">
             <label htmlFor="name">이름</label>
@@ -331,14 +554,36 @@ function App() {
             </div>
           </div>
 
-          <button
-            type="button"
-            className="result-button"
-            onClick={handleResultClick}
-            disabled={isLoading}
-          >
-            {isLoading ? '해석 중...' : '결과 보기'}
-          </button>
+          <div className="action-row">
+            <button
+              type="button"
+              className="result-button"
+              onClick={handleResultClick}
+              disabled={isLoading || isSaving || isDeleting}
+            >
+              {isLoading ? '해석 중...' : selectedId ? '새로 해석·저장' : '결과 보기'}
+            </button>
+            {selectedId && (
+              <>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleUpdateReading}
+                  disabled={isLoading || isSaving || isDeleting}
+                >
+                  {isSaving ? '저장 중...' : '수정 저장'}
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={handleDeleteReading}
+                  disabled={isLoading || isSaving || isDeleting}
+                >
+                  {isDeleting ? '삭제 중...' : '삭제'}
+                </button>
+              </>
+            )}
+          </div>
 
           {isLoading && (
             <div className="result" aria-busy="true" aria-label="사주 해석 로딩 중">
@@ -362,27 +607,34 @@ function App() {
               <dl className="reading-meta">
                 <div>
                   <dt>이름</dt>
-                  <dd>{selectedReading.name}</dd>
+                  <dd>{name}</dd>
                 </div>
                 <div>
                   <dt>생년월일</dt>
-                  <dd>{selectedReading.birth_date}</dd>
+                  <dd>{birthDate}</dd>
                 </div>
                 <div>
                   <dt>태어난 시간</dt>
-                  <dd>{formatBirthTime(selectedReading.birth_time)}</dd>
+                  <dd>{formatBirthTime(birthTime)}</dd>
                 </div>
                 <div>
                   <dt>성별</dt>
-                  <dd>{genderLabel(selectedReading.gender)}</dd>
+                  <dd>{genderLabel(gender)}</dd>
                 </div>
                 <div>
                   <dt>달력</dt>
-                  <dd>{calendarLabel(selectedReading.calendar_type)}</dd>
+                  <dd>{calendarLabel(calendarType)}</dd>
                 </div>
               </dl>
               <h3 className="result-subtitle">사주 결과</h3>
-              <p className="result-text">{selectedReading.result}</p>
+              <textarea
+                className="result-editor"
+                value={result}
+                onChange={(event) => setResult(event.target.value)}
+                rows={12}
+                aria-label="사주 결과 수정"
+              />
+              <p className="result-hint">내용을 고친 뒤 「수정 저장」을 누르면 반영됩니다.</p>
             </div>
           )}
 
